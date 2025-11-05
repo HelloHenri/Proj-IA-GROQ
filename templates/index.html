@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Chat IA — Elementos Pokémon</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="chat-container">
+    <h1 class="chat-title">🔥 Chat IA — Elementos Pokémon</h1>
+    <form method="post">
+        <div class="input-area">
+            <input type="text" name="tipo" value="{{ tipo }}" placeholder="Digite o tipo do Pokémon..." required>
+            <button type="submit">Enviar</button>
+        </div>
+    </form>
+
+    {% if erro %}
+        <p class="erro">{{ erro }}</p>
+    {% endif %}
+
+    {% if resultado %}
+        <div id="chat-box">
+            <h2>Melhores combinações contra {{ tipo.upper() }}:</h2>
+            <ul>
+                {% for r in resultado %}
+                    <li>{{ r[0].upper() }} + {{ r[1].upper() }}</li>
+                {% endfor %}
+            </ul>
+            <h3>Explicação:</h3>
+            <pre>{{ explicacao }}</pre>
+        </div>
+    {% endif %}
+</div>
+</body>
+</html>

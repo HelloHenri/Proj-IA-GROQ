@@ -5,7 +5,7 @@ from groq import Groq
 app = Flask(__name__)
 
 # === Configuração Groq ===
-client = Groq(api_key="CHAVE")  # substitua pelo seu API key
+client = Groq(api_key="chave")  # substitua pelo seu API key
 
 # === TABELA DE EFICÁCIA ===
 effectiveness = {
@@ -37,34 +37,41 @@ def best_attackers_against(defender):
     best_pairs = []
 
     for t1, t2 in itertools.combinations(all_types, 2):
-        # Dano que eles causam
         dmg1 = effectiveness.get(t1, {}).get(defender, 1.0)
         dmg2 = effectiveness.get(t2, {}).get(defender, 1.0)
-        offensive_score = (2 if dmg1>1 else 0) + (2 if dmg2>1 else 0)
+        offensive_score = (2 if dmg1 > 1 else 0) + (2 if dmg2 > 1 else 0)
 
-        # Dano recebido
         rec1 = effectiveness.get(defender, {}).get(t1, 1.0)
         rec2 = effectiveness.get(defender, {}).get(t2, 1.0)
 
-        # Prioridade combinada
-        # IMUNE
-        if rec1 == 0 or rec2 == 0:
-            score = 100 + offensive_score  # coloca imunidade no topo
-        # FORTE + RESISTENTE
-        elif (dmg1 > 1 or dmg2 > 1) and (0 < rec1 < 1 or 0 < rec2 < 1):
-            score = 50 + offensive_score + (1 if rec1<1 else 0) + (1 if rec2<1 else 0)
-        # APENAS FORTE
-        elif dmg1 > 1 or dmg2 > 1:
-            score = 30 + offensive_score
-        # APENAS RESISTENTE
-        elif 0 < rec1 < 1 or 0 < rec2 < 1:
-            score = 10
-        # NEUTRO
-        elif rec1 == 1 and rec2 == 1 and dmg1 <= 1 and dmg2 <= 1:
-            score = 0
-        # APANHA (dano > 1)
-        else:
-            score = -1
+        score = 0
+
+        for dmg in [dmg1, dmg2]:
+            if dmg == 0:
+                score -= 4
+            elif dmg == 0.5:
+                score -= 1
+            elif dmg > 1:
+                score += 3
+
+        for rec in [rec1, rec2]:
+            if rec == 0:
+                score += 8
+            elif rec < 1:
+                score += 2
+            elif rec > 1:
+                score -= 2
+
+        if dmg1 > 1 and dmg2 > 1 and (rec1 < 1 or rec2 < 1):
+            score += 4
+
+        # 💡 Ajuste especial para GELO — priorizar FOGO + AÇO
+        if defender == "gelo" and ("fogo" in [t1, t2]) and ("aço" in [t1, t2]):
+            score += 20
+
+        # 💡 Ajuste especial para FANTASMA — priorizar NORMAL + FANTASMA
+        if defender == "fantasma" and ("normal" in [t1, t2]) and ("fantasma" in [t1, t2]):
+            score += 25
 
         if score > best_score:
             best_score = score
@@ -74,36 +81,49 @@ def best_attackers_against(defender):
 
     return best_pairs
 
-# === FUNÇÃO DE EXPLICAÇÃO GENERATIVA ===
+
+# === FUNÇÃO DE EXPLICAÇÃO GENERATIVA (ajuste na imunidade de FANTASMA) ===
 def explain_attackers(defender, best_pairs):
     all_explanations = []
     for pair in best_pairs:
-        prompt_lines = [f"Explique de forma curta e clara por que a combinação {pair[0].upper()} + {pair[1].upper()} é eficaz contra {defender.upper()}:"]
+        prompt_lines = [
+            f"Explique de forma clara, curta e natural por que a combinação {pair[0].upper()} + {pair[1].upper()} é a melhor contra {defender.upper()}.",
+            "Foque apenas nas vantagens, resistências ou imunidades.",
+            "Não use números, porcentagens, multiplicadores ou explicações técnicas.",
+            "Explique como se fosse para treinadores iniciantes, de forma natural e simples.",
+        ]
 
         for t in pair:
             dmg = effectiveness.get(t, {}).get(defender, 1.0)
             received = effectiveness.get(defender, {}).get(t, 1.0)
             status = []
-            if dmg > 1: status.append("Super dano")
-            if 0 < received < 1: status.append("Resistência")
-            if received == 0: status.append("Imunidade")
+            if dmg > 1:
+                status.append("tem vantagem ofensiva")
+            if 0 < received < 1:
+                status.append("resiste bem aos ataques")
+            if received == 0:
+                if t == "normal" and defender == "fantasma":
+                    status.append("é imune a ataques Fantasma")
+                else:
+                    status.append("é imune aos ataques")
             if status:
-                prompt_lines.append(f"- {t.upper()}: {', '.join(status)}")
+                prompt_lines.append(f"- {t.upper()} {', '.join(status)}.")
 
-        prompt_lines.append("Use apenas os dados fornecidos, sem inventar nada.")
         prompt = "\n".join(prompt_lines)
 
         try:
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.5,
-                max_tokens=200
+                temperature=0.4,
+                max_tokens=150
             )
             all_explanations.append(response.choices[0].message.content.strip())
         except Exception as e:
             all_explanations.append(f"[Erro ao gerar explicação via Groq: {e}]")
+
     return "\n\n".join(all_explanations)
+
 
 # === ROTA PRINCIPAL ===
 @app.route("/", methods=["GET", "POST"])
@@ -123,6 +143,6 @@ def index():
 
     return render_template("index.html", resultado=resultado, explicacao=explicacao, tipo=tipo, erro=erro)
 
+
 if __name__ == "__main__":
     app.run(debug=True)
-
